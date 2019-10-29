@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.util.ConsistencyGuard;
 import org.apache.hudi.exception.HoodieException;
@@ -42,8 +43,8 @@ public class SizeAwareFSDataOutputStream extends FSDataOutputStream {
   private final ConsistencyGuard consistencyGuard;
 
   public SizeAwareFSDataOutputStream(Path path, FSDataOutputStream out, ConsistencyGuard consistencyGuard,
-      Runnable closeCallback) throws IOException {
-    super(out);
+      Runnable closeCallback,FileSystem.Statistics statistics) throws IOException {
+    super(out,statistics);
     this.path = path;
     this.closeCallback = closeCallback;
     this.consistencyGuard = consistencyGuard;

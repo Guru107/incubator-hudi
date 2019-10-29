@@ -154,7 +154,7 @@ public class HoodieWrapperFileSystem extends FileSystem {
     }
 
     SizeAwareFSDataOutputStream os = new SizeAwareFSDataOutputStream(path, fsDataOutputStream, consistencyGuard,
-        () -> openStreams.remove(path.getName()));
+        () -> openStreams.remove(path.getName()),this.statistics);
     openStreams.put(path.getName(), os);
     return os;
   }
