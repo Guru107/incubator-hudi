@@ -20,9 +20,12 @@ package org.apache.hudi;
 
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.util.TypedProperties;
-import org.apache.hudi.exception.HoodieKeyException;
+import org.apache.hudi.exception.HoodieException;
 
 import org.apache.avro.generic.GenericRecord;
+
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Simple Key generator for unpartitioned Hive Tables.
@@ -30,17 +33,23 @@ import org.apache.avro.generic.GenericRecord;
 public class NonpartitionedKeyGenerator extends SimpleKeyGenerator {
 
   private static final String EMPTY_PARTITION = "";
+  protected final List<String> recordKeyFields;
 
   public NonpartitionedKeyGenerator(TypedProperties props) {
     super(props);
+    this.recordKeyFields = Arrays.asList(props.getString(DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY()).split(","));
   }
 
   @Override
   public HoodieKey getKey(GenericRecord record) {
-    String recordKey = DataSourceUtils.getNullableNestedFieldValAsString(record, recordKeyField);
-    if (recordKey == null || recordKey.isEmpty()) {
-      throw new HoodieKeyException("recordKey value: \"" + recordKey + "\" for field: \"" + recordKeyField + "\" cannot be null or empty.");
+    if (recordKeyFields == null) {
+      throw new HoodieException("Unable to find field names for record key or partition path in cfg");
     }
-    return new HoodieKey(recordKey, EMPTY_PARTITION);
+    StringBuilder recordKey = new StringBuilder();
+    for (String recordKeyField : recordKeyFields) {
+      recordKey.append(recordKeyField + ":" + DataSourceUtils.getNestedFieldValAsString(record, recordKeyField) + ",");
+    }
+    recordKey.deleteCharAt(recordKey.length() - 1);
+    return new HoodieKey(recordKey.toString(), EMPTY_PARTITION);
   }
 }

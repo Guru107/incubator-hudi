@@ -19,10 +19,11 @@
 package org.apache.hudi.utilities.keygen;
 
 import org.apache.hudi.DataSourceUtils;
+import org.apache.hudi.DataSourceWriteOptions;
 import org.apache.hudi.SimpleKeyGenerator;
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.util.TypedProperties;
-import org.apache.hudi.exception.HoodieKeyException;
+import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieNotSupportedException;
 import org.apache.hudi.utilities.exception.HoodieDeltaStreamerException;
 
@@ -34,6 +35,7 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.TimeZone;
 
 /**
@@ -51,6 +53,8 @@ public class TimestampBasedKeyGenerator extends SimpleKeyGenerator {
 
   private final String outputDateFormat;
 
+  protected final List<String> recordKeyFields;
+
   /**
    * Supported configs.
    */
@@ -66,6 +70,9 @@ public class TimestampBasedKeyGenerator extends SimpleKeyGenerator {
 
   public TimestampBasedKeyGenerator(TypedProperties config) {
     super(config);
+    this.recordKeyFields = Arrays.asList(config.getString(DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY()).split(","));
+    DataSourceUtils.checkRequiredProperties(config,
+            Arrays.asList(Config.TIMESTAMP_TYPE_FIELD_PROP, Config.TIMESTAMP_OUTPUT_DATE_FORMAT_PROP));
     DataSourceUtils.checkRequiredProperties(config,
         Arrays.asList(Config.TIMESTAMP_TYPE_FIELD_PROP, Config.TIMESTAMP_OUTPUT_DATE_FORMAT_PROP));
     this.timestampType = TimestampType.valueOf(config.getString(Config.TIMESTAMP_TYPE_FIELD_PROP));
@@ -81,7 +88,17 @@ public class TimestampBasedKeyGenerator extends SimpleKeyGenerator {
 
   @Override
   public HoodieKey getKey(GenericRecord record) {
+
     Object partitionVal = DataSourceUtils.getNestedFieldVal(record, partitionPathField);
+    if (recordKeyFields == null || partitionPathField == null) {
+      throw new HoodieException("Unable to find field names for record key or partition path in cfg");
+    }
+    StringBuilder recordKey = new StringBuilder();
+    for (String recordKeyField : recordKeyFields) {
+      recordKey.append(recordKeyField + ":" + DataSourceUtils.getNestedFieldValAsString(record, recordKeyField) + ",");
+    }
+    recordKey.deleteCharAt(recordKey.length() - 1);
+
     SimpleDateFormat partitionPathFormat = new SimpleDateFormat(outputDateFormat);
     partitionPathFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
 
@@ -101,14 +118,10 @@ public class TimestampBasedKeyGenerator extends SimpleKeyGenerator {
       }
       Date timestamp = this.timestampType == TimestampType.EPOCHMILLISECONDS ? new Date(unixTime) : new Date(unixTime * 1000);
 
-      String recordKey = DataSourceUtils.getNullableNestedFieldValAsString(record, recordKeyField);
-      if (recordKey == null || recordKey.isEmpty()) {
-        throw new HoodieKeyException("recordKey value: \"" + recordKey + "\" for field: \"" + recordKeyField + "\" cannot be null or empty.");
-      }
-
       String partitionPath = hiveStylePartitioning ? partitionPathField + "=" + partitionPathFormat.format(timestamp)
               : partitionPathFormat.format(timestamp);
-      return new HoodieKey(recordKey, partitionPath);
+      return new HoodieKey(recordKey.toString(), partitionPath);
+
     } catch (ParseException pe) {
       throw new HoodieDeltaStreamerException("Unable to parse input partition field :" + partitionVal, pe);
     }
