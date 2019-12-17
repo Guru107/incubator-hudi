@@ -19,7 +19,7 @@
 import org.apache.hudi.DataSourceReadOptions;
 import org.apache.hudi.DataSourceWriteOptions;
 import org.apache.hudi.HoodieDataSourceHelpers;
-import org.apache.hudi.NonpartitionedKeyGenerator;
+import org.apache.hudi.NonPartitionedKeyGenerator;
 import org.apache.hudi.SimpleKeyGenerator;
 import org.apache.hudi.common.HoodieClientTestUtils;
 import org.apache.hudi.common.HoodieTestDataGenerator;
@@ -145,7 +145,7 @@ public class HoodieJavaApp {
         .option(HoodieWriteConfig.TABLE_NAME, tableName)
         // Add Key Extractor
         .option(DataSourceWriteOptions.KEYGENERATOR_CLASS_OPT_KEY(),
-            nonPartitionedTable ? NonpartitionedKeyGenerator.class.getCanonicalName()
+            nonPartitionedTable ? NonPartitionedKeyGenerator.class.getCanonicalName()
                 : SimpleKeyGenerator.class.getCanonicalName())
         // This will remove any existing data at path below, and create a
         .mode(SaveMode.Overwrite);
@@ -170,7 +170,7 @@ public class HoodieJavaApp {
         .option(DataSourceWriteOptions.PARTITIONPATH_FIELD_OPT_KEY(), "partition")
         .option(DataSourceWriteOptions.PRECOMBINE_FIELD_OPT_KEY(), "timestamp")
         .option(DataSourceWriteOptions.KEYGENERATOR_CLASS_OPT_KEY(),
-            nonPartitionedTable ? NonpartitionedKeyGenerator.class.getCanonicalName()
+            nonPartitionedTable ? NonPartitionedKeyGenerator.class.getCanonicalName()
                 : SimpleKeyGenerator.class.getCanonicalName()) // Add Key Extractor
         .option(HoodieWriteConfig.TABLE_NAME, tableName).mode(SaveMode.Append);
 
@@ -194,7 +194,7 @@ public class HoodieJavaApp {
         .option(DataSourceWriteOptions.PARTITIONPATH_FIELD_OPT_KEY(), "partition")
         .option(DataSourceWriteOptions.PRECOMBINE_FIELD_OPT_KEY(), "_row_key")
         .option(DataSourceWriteOptions.KEYGENERATOR_CLASS_OPT_KEY(),
-            nonPartitionedTable ? NonpartitionedKeyGenerator.class.getCanonicalName()
+            nonPartitionedTable ? NonPartitionedKeyGenerator.class.getCanonicalName()
                 : SimpleKeyGenerator.class.getCanonicalName()) // Add Key Extractor
         .option(HoodieWriteConfig.TABLE_NAME, tableName).mode(SaveMode.Append);
 

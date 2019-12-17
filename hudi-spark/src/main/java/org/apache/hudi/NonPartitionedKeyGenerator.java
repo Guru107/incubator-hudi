@@ -30,12 +30,12 @@ import java.util.List;
 /**
  * Simple Key generator for unpartitioned Hive Tables.
  */
-public class NonpartitionedKeyGenerator extends SimpleKeyGenerator {
+public class NonPartitionedKeyGenerator extends SimpleKeyGenerator {
 
   private static final String EMPTY_PARTITION = "";
   protected final List<String> recordKeyFields;
 
-  public NonpartitionedKeyGenerator(TypedProperties props) {
+  public NonPartitionedKeyGenerator(TypedProperties props) {
     super(props);
     this.recordKeyFields = Arrays.asList(props.getString(DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY()).split(","));
   }
