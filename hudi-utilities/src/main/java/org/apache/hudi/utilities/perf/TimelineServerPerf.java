@@ -56,7 +56,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-public class TimelineServerPerf implements Serializable {
+class TimelineServerPerf implements Serializable {
 
   private static final Logger LOG = LogManager.getLogger(TimelineServerPerf.class);
   private final Config cfg;
