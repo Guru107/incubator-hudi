@@ -849,6 +849,17 @@
       </snapshots>
     </repository>
     <repository>
+      <id>ICM </id>
+      <name>Maven ICM</name>
+      <url>http://maven.icm.edu.pl/artifactory/repo/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+    <repository>
       <id>cloudera-repo-releases</id>
       <url>https://repository.cloudera.com/artifactory/public/</url>
       <releases>
