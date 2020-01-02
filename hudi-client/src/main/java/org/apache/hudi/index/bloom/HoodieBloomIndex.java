@@ -105,7 +105,6 @@ public class HoodieBloomIndex<T extends HoodieRecordPayload> extends HoodieIndex
       recordRDD.unpersist(); // unpersist the input Record RDD
       keyFilenamePairRDD.unpersist();
     }
-
     return taggedRecordRDD;
   }
 
@@ -207,7 +206,7 @@ public class HoodieBloomIndex<T extends HoodieRecordPayload> extends HoodieIndex
     long totalRecords = recordsPerPartition.values().stream().mapToLong(Long::longValue).sum();
     int parallelism = (int) (totalComparisons / MAX_ITEMS_PER_SHUFFLE_PARTITION + 1);
     LOG.info(String.format(
-        "TotalRecords %d, TotalFiles %d, TotalAffectedPartitions %d, TotalComparisons %d, " + "SafeParallelism %d",
+        "TotalRecords %d, TotalFiles %d, TotalAffectedPartitions %d, TotalComparisons %d, SafeParallelism %d",
         totalRecords, totalFiles, recordsPerPartition.size(), totalComparisons, parallelism));
     return parallelism;
   }
@@ -226,8 +225,8 @@ public class HoodieBloomIndex<T extends HoodieRecordPayload> extends HoodieIndex
     // take the max
     int indexParallelism = Math.max(inputParallelism, config.getBloomIndexParallelism());
     int joinParallelism = Math.max(totalSubPartitions, indexParallelism);
-    LOG.info("InputParallelism: ${" + inputParallelism + "}, " + "IndexParallelism: ${"
-        + config.getBloomIndexParallelism() + "}, " + "TotalSubParts: ${" + totalSubPartitions + "}, "
+    LOG.info("InputParallelism: ${" + inputParallelism + "}, IndexParallelism: ${"
+        + config.getBloomIndexParallelism() + "}, TotalSubParts: ${" + totalSubPartitions + "}, "
         + "Join Parallelism set to : " + joinParallelism);
     return joinParallelism;
   }
@@ -321,8 +320,9 @@ public class HoodieBloomIndex<T extends HoodieRecordPayload> extends HoodieIndex
       String recordKey = partitionRecordKeyPair._2();
       String partitionPath = partitionRecordKeyPair._1();
 
-      return indexFileFilter.getMatchingFiles(partitionPath, recordKey).stream()
-          .map(matchingFile -> new Tuple2<>(matchingFile, new HoodieKey(recordKey, partitionPath)))
+      return indexFileFilter.getMatchingFilesAndPartition(partitionPath, recordKey).stream()
+          .map(partitionFileIdPair -> new Tuple2<>(partitionFileIdPair.getRight(),
+              new HoodieKey(recordKey, partitionPath)))
           .collect(Collectors.toList());
     }).flatMap(List::iterator);
   }
@@ -396,3 +396,4 @@ public class HoodieBloomIndex<T extends HoodieRecordPayload> extends HoodieIndex
     return writeStatusRDD;
   }
 }
+

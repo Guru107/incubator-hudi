@@ -179,7 +179,7 @@
           <failOnWarning>false</failOnWarning>
           <sourceDirectory>${project.basedir}/src/main/scala</sourceDirectory>
           <testSourceDirectory>${project.basedir}/src/test/scala</testSourceDirectory>
-          <configLocation>${main.basedir}/style/scalastyle-config.xml</configLocation>
+          <configLocation>${main.basedir}/style/scalastyle.xml</configLocation>
           <outputEncoding>UTF-8</outputEncoding>
         </configuration>
         <executions>
@@ -841,17 +841,6 @@
       <id>Maven Central</id>
       <name>Maven Repository</name>
       <url>https://repo.maven.apache.org/maven2</url>
-      <releases>
-        <enabled>true</enabled>
-      </releases>
-      <snapshots>
-        <enabled>false</enabled>
-      </snapshots>
-    </repository>
-    <repository>
-      <id>ICM </id>
-      <name>Maven ICM</name>
-      <url>http://maven.icm.edu.pl/artifactory/repo/</url>
       <releases>
         <enabled>true</enabled>
       </releases>

@@ -25,6 +25,7 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hudi.DataSourceWriteOptions._
 import org.apache.hudi.common.table.HoodieTableMetaClient
+import org.apache.hudi.common.table.timeline.HoodieActiveTimeline
 import org.apache.hudi.common.util.{FSUtils, TypedProperties}
 import org.apache.hudi.config.HoodieWriteConfig
 import org.apache.hudi.exception.HoodieException
@@ -74,11 +75,11 @@ private[hudi] object HoodieSparkSqlWriter {
       }
 
     var writeSuccessful: Boolean = false
-    var commitTime: String = null
     var writeStatuses: JavaRDD[WriteStatus] = null
 
     val jsc = new JavaSparkContext(sparkContext)
     val basePath = new Path(parameters("path"))
+    val commitTime = HoodieActiveTimeline.createNewInstantTime();
     val fs = basePath.getFileSystem(sparkContext.hadoopConfiguration)
     var exists = fs.exists(new Path(basePath, HoodieTableMetaClient.METAFOLDER_NAME))
 
@@ -112,7 +113,7 @@ private[hudi] object HoodieSparkSqlWriter {
       }
       if (mode == SaveMode.Ignore && exists) {
         log.warn(s"hoodie dataset at $basePath already exists. Ignoring & not performing actual writes.")
-        return (true, common.util.Option.empty())
+        (true, common.util.Option.empty())
       }
       if (mode == SaveMode.Overwrite && exists) {
         log.warn(s"hoodie dataset at $basePath already exists. Deleting existing data & overwriting with new data.")
@@ -143,9 +144,9 @@ private[hudi] object HoodieSparkSqlWriter {
 
       if (hoodieRecords.isEmpty()) {
         log.info("new batch has no new records, skipping...")
-        return (true, common.util.Option.empty())
+        (true, common.util.Option.empty())
       }
-      commitTime = client.startCommit()
+      client.startCommitWithTime(commitTime)
       writeStatuses = DataSourceUtils.doWriteOperation(client, hoodieRecords, commitTime, operation)
       // Check for errors and commit the write.
       val errorCount = writeStatuses.rdd.filter(ws => ws.hasErrors).count()
@@ -223,7 +224,7 @@ private[hudi] object HoodieSparkSqlWriter {
       )
 
       // Issue deletes
-      commitTime = client.startCommit()
+      client.startCommitWithTime(commitTime)
       writeStatuses = DataSourceUtils.doDeleteOperation(client, hoodieKeysToDelete, commitTime)
       val errorCount = writeStatuses.rdd.filter(ws => ws.hasErrors).count()
       writeSuccessful =
@@ -305,7 +306,7 @@ private[hudi] object HoodieSparkSqlWriter {
       HIVE_PARTITION_EXTRACTOR_CLASS_OPT_KEY -> DEFAULT_HIVE_PARTITION_EXTRACTOR_CLASS_OPT_VAL,
       HIVE_ASSUME_DATE_PARTITION_OPT_KEY -> DEFAULT_HIVE_ASSUME_DATE_PARTITION_OPT_VAL,
       HIVE_STYLE_PARTITIONING_OPT_KEY -> DEFAULT_HIVE_STYLE_PARTITIONING_OPT_VAL
-    ) ++: parameters
+    ) ++ parameters
   }
 
   def toProperties(params: Map[String, String]): TypedProperties = {

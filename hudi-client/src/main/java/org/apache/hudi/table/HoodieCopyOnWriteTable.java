@@ -35,7 +35,7 @@ import org.apache.hudi.common.model.HoodieRollingStatMetadata;
 import org.apache.hudi.common.table.HoodieTimeline;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
-import org.apache.hudi.common.util.AvroUtils;
+import org.apache.hudi.common.table.timeline.HoodieInstant.State;
 import org.apache.hudi.common.util.FSUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
@@ -58,8 +58,6 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.IndexedRecord;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
 import org.apache.parquet.avro.AvroParquetReader;
 import org.apache.parquet.avro.AvroReadSupport;
 import org.apache.parquet.hadoop.ParquetReader;
@@ -81,6 +79,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 /**
@@ -92,7 +92,7 @@ import scala.Tuple2;
  */
 public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends HoodieTable<T> {
 
-  private static final Logger LOG = LogManager.getLogger(HoodieCopyOnWriteTable.class);
+  private static final Logger LOG = LoggerFactory.getLogger(HoodieCopyOnWriteTable.class);
 
   public HoodieCopyOnWriteTable(HoodieWriteConfig config, JavaSparkContext jsc) {
     super(config, jsc);
@@ -109,14 +109,15 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
         Tuple2<String, String> partitionDelFileTuple = iter.next();
         String partitionPath = partitionDelFileTuple._1();
         String delFileName = partitionDelFileTuple._2();
-        String deletePathStr = new Path(new Path(basePath, partitionPath), delFileName).toString();
+        Path deletePath = FSUtils.getPartitionPath(FSUtils.getPartitionPath(basePath, partitionPath), delFileName);
+        String deletePathStr = deletePath.toString();
         Boolean deletedFileResult = deleteFileAndGetResult(fs, deletePathStr);
         if (!partitionCleanStatMap.containsKey(partitionPath)) {
           partitionCleanStatMap.put(partitionPath, new PartitionCleanStat(partitionPath));
         }
         PartitionCleanStat partitionCleanStat = partitionCleanStatMap.get(partitionPath);
-        partitionCleanStat.addDeleteFilePatterns(deletePathStr);
-        partitionCleanStat.addDeletedFileResult(deletePathStr, deletedFileResult);
+        partitionCleanStat.addDeleteFilePatterns(deletePath.getName());
+        partitionCleanStat.addDeletedFileResult(deletePath.getName(), deletedFileResult);
       }
       return partitionCleanStatMap.entrySet().stream().map(e -> new Tuple2<>(e.getKey(), e.getValue()))
           .collect(Collectors.toList()).iterator();
@@ -129,7 +130,7 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
     try {
       boolean deleteResult = fs.delete(deletePath, false);
       if (deleteResult) {
-        LOG.debug("Cleaned file at path :" + deletePath);
+        LOG.debug("Cleaned file at path : {}", deletePath);
       }
       return deleteResult;
     } catch (FileNotFoundException fio) {
@@ -171,7 +172,7 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
       throws IOException {
     // This is needed since sometimes some buckets are never picked in getPartition() and end up with 0 records
     if (!recordItr.hasNext()) {
-      LOG.info("Empty partition with fileId => " + fileId);
+      LOG.info("Empty partition with fileId => {}", fileId);
       return Collections.singletonList((List<WriteStatus>) Collections.EMPTY_LIST).iterator();
     }
     // these are updates
@@ -211,8 +212,8 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
 
     // TODO(vc): This needs to be revisited
     if (upsertHandle.getWriteStatus().getPartitionPath() == null) {
-      LOG.info("Upsert Handle has partition path as null " + upsertHandle.getOldFilePath() + ", "
-          + upsertHandle.getWriteStatus());
+      LOG.info("Upsert Handle has partition path as null {}, {}", upsertHandle.getOldFilePath(),
+              upsertHandle.getWriteStatus());
     }
     return Collections.singletonList(Collections.singletonList(upsertHandle.getWriteStatus())).iterator();
   }
@@ -278,6 +279,7 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
    * @param jsc JavaSparkContext
    * @return Cleaner Plan
    */
+  @Override
   public HoodieCleanerPlan scheduleClean(JavaSparkContext jsc) {
     try {
       HoodieCleanHelper cleaner = new HoodieCleanHelper(this, config);
@@ -289,8 +291,7 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
         LOG.info("Nothing to clean here. It is already clean");
         return HoodieCleanerPlan.newBuilder().setPolicy(HoodieCleaningPolicy.KEEP_LATEST_COMMITS.name()).build();
       }
-      LOG.info(
-          "Total Partitions to clean : " + partitionsToClean.size() + ", with policy " + config.getCleanerPolicy());
+      LOG.info("Total Partitions to clean : {}, with policy {}", partitionsToClean.size(), config.getCleanerPolicy());
       int cleanerParallelism = Math.min(partitionsToClean.size(), config.getCleanerParallelism());
       LOG.info("Using cleanerParallelism: " + cleanerParallelism);
 
@@ -312,81 +313,77 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
    * @throws IllegalArgumentException if unknown cleaning policy is provided
    */
   @Override
-  public List<HoodieCleanStat> clean(JavaSparkContext jsc, HoodieInstant cleanInstant) {
-    try {
-      HoodieCleanerPlan cleanerPlan = AvroUtils.deserializeCleanerPlan(getActiveTimeline()
-          .getInstantAuxiliaryDetails(HoodieTimeline.getCleanRequestedInstant(cleanInstant.getTimestamp())).get());
+  public List<HoodieCleanStat> clean(JavaSparkContext jsc, HoodieInstant cleanInstant, HoodieCleanerPlan cleanerPlan) {
+    int cleanerParallelism = Math.min(
+        (int) (cleanerPlan.getFilesToBeDeletedPerPartition().values().stream().mapToInt(x -> x.size()).count()),
+        config.getCleanerParallelism());
+    LOG.info("Using cleanerParallelism: {}", cleanerParallelism);
+    List<Tuple2<String, PartitionCleanStat>> partitionCleanStats = jsc
+        .parallelize(cleanerPlan.getFilesToBeDeletedPerPartition().entrySet().stream()
+            .flatMap(x -> x.getValue().stream().map(y -> new Tuple2<String, String>(x.getKey(), y)))
+            .collect(Collectors.toList()), cleanerParallelism)
+        .mapPartitionsToPair(deleteFilesFunc(this)).reduceByKey((e1, e2) -> e1.merge(e2)).collect();
 
-      int cleanerParallelism = Math.min(
-          (int) (cleanerPlan.getFilesToBeDeletedPerPartition().values().stream().mapToInt(x -> x.size()).count()),
-          config.getCleanerParallelism());
-      LOG.info("Using cleanerParallelism: " + cleanerParallelism);
-      List<Tuple2<String, PartitionCleanStat>> partitionCleanStats = jsc
-          .parallelize(cleanerPlan.getFilesToBeDeletedPerPartition().entrySet().stream()
-              .flatMap(x -> x.getValue().stream().map(y -> new Tuple2<String, String>(x.getKey(), y)))
-              .collect(Collectors.toList()), cleanerParallelism)
-          .mapPartitionsToPair(deleteFilesFunc(this)).reduceByKey((e1, e2) -> e1.merge(e2)).collect();
+    Map<String, PartitionCleanStat> partitionCleanStatsMap =
+        partitionCleanStats.stream().collect(Collectors.toMap(Tuple2::_1, Tuple2::_2));
 
-      Map<String, PartitionCleanStat> partitionCleanStatsMap =
-          partitionCleanStats.stream().collect(Collectors.toMap(Tuple2::_1, Tuple2::_2));
-
-      // Return PartitionCleanStat for each partition passed.
-      return cleanerPlan.getFilesToBeDeletedPerPartition().keySet().stream().map(partitionPath -> {
-        PartitionCleanStat partitionCleanStat =
-            (partitionCleanStatsMap.containsKey(partitionPath)) ? partitionCleanStatsMap.get(partitionPath)
-                : new PartitionCleanStat(partitionPath);
-        HoodieActionInstant actionInstant = cleanerPlan.getEarliestInstantToRetain();
-        return HoodieCleanStat.newBuilder().withPolicy(config.getCleanerPolicy()).withPartitionPath(partitionPath)
-            .withEarliestCommitRetained(Option.ofNullable(
-                actionInstant != null
-                    ? new HoodieInstant(HoodieInstant.State.valueOf(actionInstant.getState()),
-                        actionInstant.getAction(), actionInstant.getTimestamp())
-                    : null))
-            .withDeletePathPattern(partitionCleanStat.deletePathPatterns)
-            .withSuccessfulDeletes(partitionCleanStat.successDeleteFiles)
-            .withFailedDeletes(partitionCleanStat.failedDeleteFiles).build();
-      }).collect(Collectors.toList());
-    } catch (IOException e) {
-      throw new HoodieIOException("Failed to clean up after commit", e);
-    }
+    // Return PartitionCleanStat for each partition passed.
+    return cleanerPlan.getFilesToBeDeletedPerPartition().keySet().stream().map(partitionPath -> {
+      PartitionCleanStat partitionCleanStat =
+          (partitionCleanStatsMap.containsKey(partitionPath)) ? partitionCleanStatsMap.get(partitionPath)
+              : new PartitionCleanStat(partitionPath);
+      HoodieActionInstant actionInstant = cleanerPlan.getEarliestInstantToRetain();
+      return HoodieCleanStat.newBuilder().withPolicy(config.getCleanerPolicy()).withPartitionPath(partitionPath)
+          .withEarliestCommitRetained(Option.ofNullable(
+              actionInstant != null
+                  ? new HoodieInstant(State.valueOf(actionInstant.getState()),
+                      actionInstant.getAction(), actionInstant.getTimestamp())
+                  : null))
+          .withDeletePathPattern(partitionCleanStat.deletePathPatterns)
+          .withSuccessfulDeletes(partitionCleanStat.successDeleteFiles)
+          .withFailedDeletes(partitionCleanStat.failedDeleteFiles).build();
+    }).collect(Collectors.toList());
   }
 
   @Override
-  public List<HoodieRollbackStat> rollback(JavaSparkContext jsc, String commit, boolean deleteInstants)
+  public List<HoodieRollbackStat> rollback(JavaSparkContext jsc, HoodieInstant instant, boolean deleteInstants)
       throws IOException {
+    Long startTime = System.currentTimeMillis();
+    List<HoodieRollbackStat> stats = new ArrayList<>();
     String actionType = metaClient.getCommitActionType();
     HoodieActiveTimeline activeTimeline = this.getActiveTimeline();
-    List<String> inflights =
-        this.getInflightCommitTimeline().getInstants().map(HoodieInstant::getTimestamp).collect(Collectors.toList());
-    // Atomically unpublish the commits
-    if (!inflights.contains(commit)) {
-      LOG.info("Unpublishing " + commit);
-      activeTimeline.revertToInflight(new HoodieInstant(false, actionType, commit));
+
+    if (instant.isCompleted()) {
+      LOG.info("Unpublishing instant {}", instant);
+      instant = activeTimeline.revertToInflight(instant);
     }
 
-    HoodieInstant instantToRollback = new HoodieInstant(false, actionType, commit);
-    Long startTime = System.currentTimeMillis();
+    // For Requested State (like failure during index lookup), there is nothing to do rollback other than
+    // deleting the timeline file
+    if (!instant.isRequested()) {
+      String commit = instant.getTimestamp();
 
-    // delete all the data files for this commit
-    LOG.info("Clean out all parquet files generated for commit: " + commit);
-    List<RollbackRequest> rollbackRequests = generateRollbackRequests(instantToRollback);
+      // delete all the data files for this commit
+      LOG.info("Clean out all parquet files generated for commit: {}", commit);
+      List<RollbackRequest> rollbackRequests = generateRollbackRequests(instant);
 
-    // TODO: We need to persist this as rollback workload and use it in case of partial failures
-    List<HoodieRollbackStat> stats =
-        new RollbackExecutor(metaClient, config).performRollback(jsc, instantToRollback, rollbackRequests);
-
+      //TODO: We need to persist this as rollback workload and use it in case of partial failures
+      stats = new RollbackExecutor(metaClient, config).performRollback(jsc, instant, rollbackRequests);
+    }
     // Delete Inflight instant if enabled
-    deleteInflightInstant(deleteInstants, activeTimeline, new HoodieInstant(true, actionType, commit));
-    LOG.info("Time(in ms) taken to finish rollback " + (System.currentTimeMillis() - startTime));
+    deleteInflightAndRequestedInstant(deleteInstants, activeTimeline, instant);
+    LOG.info("Time(in ms) taken to finish rollback {}", (System.currentTimeMillis() - startTime));
     return stats;
   }
 
-  private List<RollbackRequest> generateRollbackRequests(HoodieInstant instantToRollback) throws IOException {
+  private List<RollbackRequest> generateRollbackRequests(HoodieInstant instantToRollback)
+      throws IOException {
     return FSUtils.getAllPartitionPaths(this.metaClient.getFs(), this.getMetaClient().getBasePath(),
         config.shouldAssumeDatePartitioning()).stream().map(partitionPath -> {
           return RollbackRequest.createRollbackRequestWithDeleteDataAndLogFilesAction(partitionPath, instantToRollback);
         }).collect(Collectors.toList());
   }
+
 
   /**
    * Delete Inflight instant if enabled.
@@ -395,17 +392,24 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
    * @param activeTimeline Hoodie active timeline
    * @param instantToBeDeleted Instant to be deleted
    */
-  protected void deleteInflightInstant(boolean deleteInstant, HoodieActiveTimeline activeTimeline,
+  protected void deleteInflightAndRequestedInstant(boolean deleteInstant, HoodieActiveTimeline activeTimeline,
       HoodieInstant instantToBeDeleted) {
     // Remove marker files always on rollback
     deleteMarkerDir(instantToBeDeleted.getTimestamp());
 
     // Remove the rolled back inflight commits
     if (deleteInstant) {
-      activeTimeline.deleteInflight(instantToBeDeleted);
-      LOG.info("Deleted inflight commit " + instantToBeDeleted);
+      LOG.info("Deleting instant={}", instantToBeDeleted);
+      activeTimeline.deletePending(instantToBeDeleted);
+      if (instantToBeDeleted.isInflight() && !metaClient.getTimelineLayoutVersion().isNullVersion()) {
+        // Delete corresponding requested instant
+        instantToBeDeleted = new HoodieInstant(State.REQUESTED, instantToBeDeleted.getAction(),
+            instantToBeDeleted.getTimestamp());
+        activeTimeline.deletePending(instantToBeDeleted);
+      }
+      LOG.info("Deleted pending commit {}", instantToBeDeleted);
     } else {
-      LOG.warn("Rollback finished without deleting inflight instant file. Instant=" + instantToBeDeleted);
+      LOG.warn("Rollback finished without deleting inflight instant file. Instant={}", instantToBeDeleted);
     }
   }
 
@@ -574,9 +578,10 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
       assignUpdates(profile);
       assignInserts(profile);
 
-      LOG.info("Total Buckets :" + totalBuckets + ", " + "buckets info => " + bucketInfoMap + ", \n"
-          + "Partition to insert buckets => " + partitionPathToInsertBuckets + ", \n"
-          + "UpdateLocations mapped to buckets =>" + updateLocationToBucket);
+      LOG.info("Total Buckets :{}, buckets info => {}, \n"
+              + "Partition to insert buckets => {}, \n"
+              + "UpdateLocations mapped to buckets =>{}",
+              totalBuckets, bucketInfoMap, partitionPathToInsertBuckets, updateLocationToBucket);
     }
 
     private void assignUpdates(WorkloadProfile profile) {
@@ -604,13 +609,13 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
       long averageRecordSize =
           averageBytesPerRecord(metaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants(),
               config.getCopyOnWriteRecordSizeEstimate());
-      LOG.info("AvgRecordSize => " + averageRecordSize);
+      LOG.info("AvgRecordSize => {}", averageRecordSize);
       for (String partitionPath : partitionPaths) {
         WorkloadStat pStat = profile.getWorkloadStat(partitionPath);
         if (pStat.getNumInserts() > 0) {
 
           List<SmallFile> smallFiles = getSmallFiles(partitionPath);
-          LOG.info("For partitionPath : " + partitionPath + " Small Files => " + smallFiles);
+          LOG.info("For partitionPath : {} Small Files => {}", partitionPath, smallFiles);
 
           long totalUnassignedInserts = pStat.getNumInserts();
           List<Integer> bucketNumbers = new ArrayList<>();
@@ -625,10 +630,10 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
               int bucket;
               if (updateLocationToBucket.containsKey(smallFile.location.getFileId())) {
                 bucket = updateLocationToBucket.get(smallFile.location.getFileId());
-                LOG.info("Assigning " + recordsToAppend + " inserts to existing update bucket " + bucket);
+                LOG.info("Assigning {} inserts to existing update bucket {}", recordsToAppend, bucket);
               } else {
                 bucket = addUpdateBucket(smallFile.location.getFileId());
-                LOG.info("Assigning " + recordsToAppend + " inserts to new update bucket " + bucket);
+                LOG.info("Assigning {} inserts to new update bucket {}", recordsToAppend, bucket);
               }
               bucketNumbers.add(bucket);
               recordsPerBucket.add(recordsToAppend);
@@ -644,8 +649,8 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
             }
 
             int insertBuckets = (int) Math.ceil((1.0 * totalUnassignedInserts) / insertRecordsPerBucket);
-            LOG.info("After small file assignment: unassignedInserts => " + totalUnassignedInserts
-                + ", totalInsertBuckets => " + insertBuckets + ", recordsPerBucket => " + insertRecordsPerBucket);
+            LOG.info("After small file assignment: unassignedInserts => {}, totalInsertBuckets => {}, "
+                    + "recordsPerBucket => {}", totalUnassignedInserts, insertBuckets, insertRecordsPerBucket);
             for (int b = 0; b < insertBuckets; b++) {
               bucketNumbers.add(totalBuckets);
               recordsPerBucket.add(totalUnassignedInserts / insertBuckets);
@@ -665,7 +670,7 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
             bkt.weight = (1.0 * recordsPerBucket.get(i)) / pStat.getNumInserts();
             insertBuckets.add(bkt);
           }
-          LOG.info("Total insert buckets for partition path " + partitionPath + " => " + insertBuckets);
+          LOG.info("Total insert buckets for partition path {} => {}", partitionPath, insertBuckets);
           partitionPathToInsertBuckets.put(partitionPath, insertBuckets);
         }
       }
@@ -775,3 +780,4 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
     return avgSize;
   }
 }
+

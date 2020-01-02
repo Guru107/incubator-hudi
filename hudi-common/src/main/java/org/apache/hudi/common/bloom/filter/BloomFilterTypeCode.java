@@ -16,20 +16,13 @@
  * limitations under the License.
  */
 
-package org.apache.hudi.utilities.sources;
+package org.apache.hudi.common.bloom.filter;
 
-import org.apache.hudi.common.util.TypedProperties;
-import org.apache.hudi.utilities.schema.SchemaProvider;
-
-import org.apache.avro.generic.GenericRecord;
-import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.sql.SparkSession;
-
-public abstract class ParquetSource extends Source<JavaRDD<GenericRecord>> {
-
-  public ParquetSource(TypedProperties props, JavaSparkContext sparkContext, SparkSession sparkSession,
-      SchemaProvider schemaProvider) {
-    super(props, sparkContext, sparkSession, schemaProvider, SourceType.PARQUET);
-  }
+/**
+ * Bloom filter type codes.
+ * Please do not change the order of the entries.
+ */
+public enum BloomFilterTypeCode {
+  SIMPLE,
+  DYNAMIC_V0
 }

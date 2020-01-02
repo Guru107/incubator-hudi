@@ -74,7 +74,7 @@ import java.util.stream.IntStream;
  *
  * In continuous mode, DeltaStreamer runs in loop-mode going through the below operations (a) pull-from-source (b)
  * write-to-sink (c) Schedule Compactions if needed (d) Conditionally Sync to Hive each cycle. For MOR table with
- * continuous mode enabled, a seperate compactor thread is allocated to execute compactions
+ * continuous mode enabled, a separate compactor thread is allocated to execute compactions
  */
 public class HoodieDeltaStreamer implements Serializable {
 
@@ -160,7 +160,7 @@ public class HoodieDeltaStreamer implements Serializable {
     @Parameter(names = {"--target-table"}, description = "name of the target table in Hive", required = true)
     public String targetTableName;
 
-    @Parameter(names = {"--storage-type"}, description = "Type of Storage. " + "COPY_ON_WRITE (or) MERGE_ON_READ",
+    @Parameter(names = {"--storage-type"}, description = "Type of Storage. COPY_ON_WRITE (or) MERGE_ON_READ",
         required = true)
     public String storageType;
 
@@ -213,7 +213,7 @@ public class HoodieDeltaStreamer implements Serializable {
     public Operation operation = Operation.UPSERT;
 
     @Parameter(names = {"--filter-dupes"},
-        description = "Should duplicate records from source be dropped/filtered out" + "before insert/bulk-insert")
+        description = "Should duplicate records from source be dropped/filtered out before insert/bulk-insert")
     public Boolean filterDupes = false;
 
     @Parameter(names = {"--enable-hive-sync"}, description = "Enable syncing to hive")
@@ -229,7 +229,7 @@ public class HoodieDeltaStreamer implements Serializable {
     public Boolean continuousMode = false;
 
     @Parameter(names = {"--min-sync-interval-seconds"},
-        description = "the min sync interval of each sync in " + "continuous mode")
+        description = "the min sync interval of each sync in continuous mode")
     public Integer minSyncIntervalSeconds = 0;
 
     @Parameter(names = {"--spark-master"}, description = "spark master to use.")
@@ -259,7 +259,7 @@ public class HoodieDeltaStreamer implements Serializable {
      * Compaction is enabled for MoR table by default. This flag disables it
      */
     @Parameter(names = {"--disable-compaction"},
-        description = "Compaction is enabled for MoR table by default." + "This flag disables it ")
+        description = "Compaction is enabled for MoR table by default. This flag disables it ")
     public Boolean forceDisableCompaction = false;
 
     /**
@@ -554,6 +554,7 @@ public class HoodieDeltaStreamer implements Serializable {
     /**
      * Start Compaction Service.
      */
+    @Override
     protected Pair<CompletableFuture, ExecutorService> startService() {
       ExecutorService executor = Executors.newFixedThreadPool(maxConcurrentCompaction);
       List<CompletableFuture<Boolean>> compactionFutures =

@@ -19,9 +19,11 @@
 package org.apache.hudi.index.bloom;
 
 import org.apache.hudi.HoodieClientTestHarness;
-import org.apache.hudi.common.BloomFilter;
 import org.apache.hudi.common.HoodieClientTestUtils;
 import org.apache.hudi.common.TestRawTripPayload;
+import org.apache.hudi.common.bloom.filter.BloomFilter;
+import org.apache.hudi.common.bloom.filter.BloomFilterFactory;
+import org.apache.hudi.common.bloom.filter.BloomFilterTypeCode;
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
@@ -248,7 +250,7 @@ public class TestHoodieBloomIndex extends HoodieClientTestHarness {
 
     // We write record1, record2 to a parquet file, but the bloom filter contains (record1,
     // record2, record3).
-    BloomFilter filter = new BloomFilter(10000, 0.0000001);
+    BloomFilter filter = BloomFilterFactory.createBloomFilter(10000, 0.0000001, -1, BloomFilterTypeCode.SIMPLE.name());
     filter.add(record3.getRecordKey());
     String filename = HoodieClientTestUtils.writeParquetFile(basePath, "2016/01/31", Arrays.asList(record1, record2),
         schema, filter, true);
@@ -290,7 +292,7 @@ public class TestHoodieBloomIndex extends HoodieClientTestHarness {
     try {
       bloomIndex.tagLocation(recordRDD, jsc, table);
     } catch (IllegalArgumentException e) {
-      fail("EmptyRDD should not result in IllegalArgumentException: Positive number of slices " + "required");
+      fail("EmptyRDD should not result in IllegalArgumentException: Positive number of slices required");
     }
   }
 
@@ -300,11 +302,11 @@ public class TestHoodieBloomIndex extends HoodieClientTestHarness {
     String rowKey1 = UUID.randomUUID().toString();
     String rowKey2 = UUID.randomUUID().toString();
     String rowKey3 = UUID.randomUUID().toString();
-    String recordStr1 = "{\"_row_key\":\"" + rowKey1 + "\"," + "\"time\":\"2016-01-31T03:16:41.415Z\",\"number\":12}";
-    String recordStr2 = "{\"_row_key\":\"" + rowKey2 + "\"," + "\"time\":\"2016-01-31T03:20:41.415Z\",\"number\":100}";
-    String recordStr3 = "{\"_row_key\":\"" + rowKey3 + "\"," + "\"time\":\"2016-01-31T03:16:41.415Z\",\"number\":15}";
+    String recordStr1 = "{\"_row_key\":\"" + rowKey1 + "\",\"time\":\"2016-01-31T03:16:41.415Z\",\"number\":12}";
+    String recordStr2 = "{\"_row_key\":\"" + rowKey2 + "\",\"time\":\"2016-01-31T03:20:41.415Z\",\"number\":100}";
+    String recordStr3 = "{\"_row_key\":\"" + rowKey3 + "\",\"time\":\"2016-01-31T03:16:41.415Z\",\"number\":15}";
     // place same row key under a different partition.
-    String recordStr4 = "{\"_row_key\":\"" + rowKey1 + "\"," + "\"time\":\"2015-01-31T03:16:41.415Z\",\"number\":32}";
+    String recordStr4 = "{\"_row_key\":\"" + rowKey1 + "\",\"time\":\"2015-01-31T03:16:41.415Z\",\"number\":32}";
     TestRawTripPayload rowChange1 = new TestRawTripPayload(recordStr1);
     HoodieRecord record1 =
         new HoodieRecord(new HoodieKey(rowChange1.getRowKey(), rowChange1.getPartitionPath()), rowChange1);
@@ -451,7 +453,8 @@ public class TestHoodieBloomIndex extends HoodieClientTestHarness {
     HoodieRecord record2 =
         new HoodieRecord(new HoodieKey(rowChange2.getRowKey(), rowChange2.getPartitionPath()), rowChange2);
 
-    BloomFilter filter = new BloomFilter(10000, 0.0000001);
+    BloomFilter filter = BloomFilterFactory.createBloomFilter(10000, 0.0000001, -1,
+        BloomFilterTypeCode.SIMPLE.name());
     filter.add(record2.getRecordKey());
     String filename =
         HoodieClientTestUtils.writeParquetFile(basePath, "2016/01/31", Arrays.asList(record1), schema, filter, true);

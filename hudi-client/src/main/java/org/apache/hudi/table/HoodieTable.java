@@ -52,11 +52,11 @@ import org.apache.hudi.index.HoodieIndex;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
 import org.apache.spark.Partitioner;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -73,7 +73,7 @@ import java.util.stream.Stream;
  */
 public abstract class HoodieTable<T extends HoodieRecordPayload> implements Serializable {
 
-  private static final Logger LOG = LogManager.getLogger(HoodieTable.class);
+  private static final Logger LOG = LoggerFactory.getLogger(HoodieTable.class);
 
   protected final HoodieWriteConfig config;
   protected final HoodieTableMetaClient metaClient;
@@ -182,8 +182,8 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
   /**
    * Get only the inflights (no-completed) commit timeline.
    */
-  public HoodieTimeline getInflightCommitTimeline() {
-    return metaClient.getCommitsTimeline().filterInflightsExcludingCompaction();
+  public HoodieTimeline getPendingCommitTimeline() {
+    return metaClient.getCommitsTimeline().filterPendingExcludingCompaction();
   }
 
   /**
@@ -287,16 +287,18 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
    * 
    * @param jsc Java Spark Context
    * @param cleanInstant Clean Instant
+   * @param cleanerPlan Cleaner Plan
    * @return list of Clean Stats
    */
-  public abstract List<HoodieCleanStat> clean(JavaSparkContext jsc, HoodieInstant cleanInstant);
+  public abstract List<HoodieCleanStat> clean(JavaSparkContext jsc, HoodieInstant cleanInstant,
+      HoodieCleanerPlan cleanerPlan);
 
   /**
    * Rollback the (inflight/committed) record changes with the given commit time. Four steps: (1) Atomically unpublish
    * this commit (2) clean indexing data (3) clean new generated parquet files / log blocks (4) Finally, delete
    * .<action>.commit or .<action>.inflight file if deleteInstants = true
    */
-  public abstract List<HoodieRollbackStat> rollback(JavaSparkContext jsc, String commit, boolean deleteInstants)
+  public abstract List<HoodieRollbackStat> rollback(JavaSparkContext jsc, HoodieInstant instant, boolean deleteInstants)
       throws IOException;
 
   /**
@@ -322,7 +324,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
       Path markerDir = new Path(metaClient.getMarkerFolderPath(instantTs));
       if (fs.exists(markerDir)) {
         // For append only case, we do not write to marker dir. Hence, the above check
-        LOG.info("Removing marker directory=" + markerDir);
+        LOG.info("Removing marker directory={}", markerDir);
         fs.delete(markerDir, true);
       }
     } catch (IOException ioe) {
@@ -361,7 +363,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
       invalidDataPaths.removeAll(validDataPaths);
       if (!invalidDataPaths.isEmpty()) {
         LOG.info(
-            "Removing duplicate data files created due to spark retries before committing. Paths=" + invalidDataPaths);
+            "Removing duplicate data files created due to spark retries before committing. Paths={}", invalidDataPaths);
       }
 
       Map<String, List<Pair<String, String>>> groupByPartition = invalidDataPaths.stream()
@@ -379,7 +381,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
         jsc.parallelize(new ArrayList<>(groupByPartition.values()), config.getFinalizeWriteParallelism())
             .map(partitionWithFileList -> {
               final FileSystem fileSystem = metaClient.getFs();
-              LOG.info("Deleting invalid data files=" + partitionWithFileList);
+              LOG.info("Deleting invalid data files={}", partitionWithFileList);
               if (partitionWithFileList.isEmpty()) {
                 return true;
               }
@@ -445,3 +447,4 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
     return new FailSafeConsistencyGuard(fileSystem, config.getConsistencyGuardConfig());
   }
 }
+
