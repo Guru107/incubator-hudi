@@ -77,6 +77,17 @@ public class HoodieIndexConfig extends DefaultHoodieConfig {
   public static final String BLOOM_INDEX_INPUT_STORAGE_LEVEL = "hoodie.bloom.index.input.storage.level";
   public static final String DEFAULT_BLOOM_INDEX_INPUT_STORAGE_LEVEL = "MEMORY_AND_DISK_SER";
 
+  /**
+   * Only applies if index type is GLOBAL_BLOOM.
+   * <p>
+   * When set to true, an update to a record with a different partition from its existing one
+   * will insert the record to the new partition and delete it from the old partition.
+   * <p>
+   * When set to false, a record will be updated to the old partition.
+   */
+  public static final String BLOOM_INDEX_UPDATE_PARTITION_PATH = "hoodie.bloom.index.update.partition.path";
+  public static final String DEFAULT_BLOOM_INDEX_UPDATE_PARTITION_PATH = "false";
+
   private HoodieIndexConfig(Properties props) {
     super(props);
   }
@@ -179,6 +190,11 @@ public class HoodieIndexConfig extends DefaultHoodieConfig {
       return this;
     }
 
+    public Builder withBloomIndexUpdatePartitionPath(boolean updatePartitionPath) {
+      props.setProperty(BLOOM_INDEX_UPDATE_PARTITION_PATH, String.valueOf(updatePartitionPath));
+      return this;
+    }
+
     public HoodieIndexConfig build() {
       HoodieIndexConfig config = new HoodieIndexConfig(props);
       setDefaultOnCondition(props, !props.containsKey(INDEX_TYPE_PROP), INDEX_TYPE_PROP, DEFAULT_INDEX_TYPE);
@@ -189,6 +205,8 @@ public class HoodieIndexConfig extends DefaultHoodieConfig {
           DEFAULT_BLOOM_INDEX_PARALLELISM);
       setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_PRUNE_BY_RANGES_PROP),
           BLOOM_INDEX_PRUNE_BY_RANGES_PROP, DEFAULT_BLOOM_INDEX_PRUNE_BY_RANGES);
+      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_UPDATE_PARTITION_PATH),
+              BLOOM_INDEX_UPDATE_PARTITION_PATH, DEFAULT_BLOOM_INDEX_UPDATE_PARTITION_PATH);
       setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_USE_CACHING_PROP), BLOOM_INDEX_USE_CACHING_PROP,
           DEFAULT_BLOOM_INDEX_USE_CACHING);
       setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_INPUT_STORAGE_LEVEL), BLOOM_INDEX_INPUT_STORAGE_LEVEL,
